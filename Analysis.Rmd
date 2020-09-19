@@ -1,0 +1,352 @@
+---
+title: "Instag Analysis"
+author: "Simmie"
+date: "9/19/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+df <- read.csv("table-bbnaija-2020-09-19.csv")
+```
+
+
+
+```{r echo = FALSE}
+#Load in required libraries
+library(tidyverse)
+library(tidytext)
+library(reshape2)
+library(stringi)
+library(stringi)
+library(rmarkdown)
+library(knitr)
+library(eeptools)
+library(lubridate)
+```
+
+```{r echo=FALSE}
+#Get the distinct tweets
+df <- df %>% 
+  rename(tweet = Text,
+         date = Date) %>% 
+  distinct(tweet, .keep_all = T) #This is to remove all duplicate tweets
+```
+
+
+## General Overview
+
+```{r}
+#Regular expression (Regex) function for extracting handles mentioned
+users <- function(x, ...){
+  xx <- strsplit(x, " ")
+  lapply(xx, function(xx)xx[grepl("@[[:alnum:]]", xx)])
+}
+#Most mention words
+removeURL2 <- function(x) gsub("([[:alpha:]])(?=\\1)", "", x, perl = TRUE)
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+#Extract the most mentioned handles
+users(df$tweet) %>% 
+  unlist() %>%
+  tolower() %>% 
+  as_tibble() %>% 
+  count(value, sort = T) %>% 
+  top_n(30) %>% 
+  write.csv("Analysis Files//top20_handles.csv")
+
+
+
+users(df$tweet) %>% 
+  unlist() %>%
+  tolower() %>% 
+  as_tibble() %>% 
+  count() %>% 
+  write.csv("Analysis Files//No of handles.csv")
+
+
+
+df  %>% 
+  separate(date, into = c("date", "time"), sep = " ") %>% 
+  group_by(date) %>% 
+  count()  %>% 
+  write.csv("Analysis Files//No of Instasagges.csv")
+
+df %>% 
+  separate(date, into = c("date", "time"), sep = " ") %>% 
+  group_by(date) %>% 
+  summarise(n = n_distinct(Owner)) %>% 
+  write.csv('Analysis Files//No of Accounts.csv')
+```
+
+
+
+We need to get the most mentioned words in the tweets
+```{r}
+#Most mention words
+df %>% 
+  separate(date, into = c("date", "time"), sep = " ") %>% 
+  group_by(date) %>% 
+  mutate(text = tolower(tweet)) %>% 
+  #mutate(text = removeURL2(text)) %>% 
+  mutate(text = removeNumPunct(text)) %>% 
+  mutate(text = gsub("brt", "", text)) %>% 
+  # mutate(text = gsub("nultimateloveng", "ultimateloveng", text)) %>% 
+  # mutate(text = gsub("bultimateloveng", "ultimateloveng", text)) %>%
+  unnest_tokens(word, text) %>% 
+  anti_join(stop_words) %>% 
+  count(word, sort = T) %>% 
+  top_n(30) %>% 
+  write.csv("Analysis Files//top20_words.csv")
+```
+
+
+
+The NRC sentiments which show different reactions will be extracted for the whole tweets
+```{r}
+#install.packages("textdata")
+#Reactions on comments
+df %>% 
+  mutate(text = tolower(tweet)) %>% 
+  mutate(text = removeURL2(text)) %>% 
+separate(date, into = c("date", "time"), sep = " ") %>% 
+  #group_by(date) %>% 
+  mutate(text = gsub("brt", "", text)) %>% 
+  unnest_tokens(word, text) %>% 
+  anti_join(stop_words) %>% 
+  inner_join(get_sentiments("nrc")) %>% 
+  count(word, sentiment, date, sort = T) %>% 
+  distinct(word, .keep_all = T) %>% 
+  ungroup() %>% 
+  group_by(sentiment, date) %>% 
+  summarise(n = sum(n)) %>% 
+  write.csv("Analysis Files//reactions_on_alltweets.csv")
+```
+Getting the daily tweets trend by time; 
+```{r}
+#Find general daily trend
+  df %>% 
+    separate(date, into = c("date", "time"), sep = " ") %>% 
+    mutate(date = ymd(date)) %>% 
+    mutate(hr = hour(hms(time))) %>% 
+    mutate(tm = ifelse(hr < 12, "am", "pm")) %>%
+    group_by(date) %>%
+    count() %>% 
+    write.csv("Analysis Files//daily_trend.csv")
+
+```
+
+
+Getting the hourly trend to see which time of the day people tweeted the most;
+```{r}
+#Find hrly trend
+#am pm 
+df %>% 
+    separate(date, into = c("date", "time"), sep = " ") %>% 
+    mutate(date = ymd(date)) %>% 
+    mutate(hr = hour(hms(time))) %>% 
+    mutate(tm = ifelse(hr < 12, "am", "pm")) %>%
+    unite(time, hr, tm, sep = " ") %>% 
+  group_by(time, date) %>% 
+  count() %>% 
+    write.csv("Analysis Files//hr_trend.csv")
+  
+```
+
+
+
+
+Getting the day of the week people tweeted the most;
+```{r}
+#Week day trend
+df %>% 
+separate(date, into = c("date", "time"), sep = " ") %>% 
+  mutate(date = ymd(date)) %>% 
+  mutate(day = weekdays(date)) %>% 
+  group_by( day) %>% 
+  count() %>%
+  write.csv("Analysis Files//day_tweets.csv")
+
+```
+
+
+
+Getting the overall bing trend for all tweets;
+```{r}
+#Overall bing trend 
+df %>%
+  mutate(tweet = removeURL2(tweet)) %>% 
+  mutate(tweet = removeNumPunct(tweet)) %>% 
+  mutate(tweet = tolower(tweet)) %>% 
+  mutate(tweet = gsub("wil", "", tweet)) %>% 
+  mutate(tweet = gsub("ben", "", tweet)) %>% 
+  mutate(tweet = gsub("al", "", tweet)) %>% 
+  mutate(tweet = gsub("ned", "", tweet)) %>% 
+  unnest_tokens(word, tweet) %>% 
+  anti_join(stop_words) %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  separate(date, into = c("date", "time"), sep = " ") %>% 
+  group_by(sentiment, date) %>% 
+  count() %>%
+  write.csv("Analysis Files//bing_trend.csv")
+```
+
+
+## Featured Contestants Analysis
+
+There must be a text file containing all the contestants name. That way, we can loop for each analysis. We will call the text file All_contestants
+```{r}
+all_contestants <- scan("All_contestants.txt", character(), sep = ",")
+x <- list(all_contestants)
+#x <- list(c("", "alteryx", "confirme", "", "", "", "ans", "", ""))
+all_contestants <- lapply(x, function(z){ z[!is.na(z) & z != ""]})
+all_contestants <- tolower(as.vector(all_contestants[[1]]))
+# all_contestants <- c(all_contestants, "dora")
+all_contestants <- tolower(unlist(all_contestants))
+all_contestants
+```
+
+
+Daily Mentions
+```{r}
+plyr::rbind.fill(lapply(all_contestants, function(x){
+  df[grepl(x, tolower(df$tweet)),] %>% 
+    separate(date, into = c("date", "time"), sep = " ") %>%
+    mutate(date = ymd(date)) %>% 
+    mutate(day = weekdays(date)) %>%
+    mutate(hr = hour(hms(time))) %>% 
+    mutate(tm = ifelse(hr < 12, "am", "pm")) %>%
+    unite(time, hr, tm, sep = " ") %>% 
+    group_by(day, time, date) %>% 
+    count(tweet) %>% 
+    summarise(n = sum(n))  %>% 
+    ungroup() %>% 
+    mutate(contestant = x) 
+})) %>% 
+  write.csv("Analysis Files//Team_daily_mentions.csv", row.names = F)
+
+
+
+#Total Mentions of Contestants
+plyr::rbind.fill(lapply(all_contestants, function(x){
+  df[grepl(x, tolower(df$tweet)),] %>% 
+    separate(date, into = c('date', 'time'), sep = ' ') %>% 
+    group_by(date) %>% 
+    count() %>% 
+    ungroup() %>% 
+    group_by(date) %>% 
+    summarise(n = sum(n)) %>% 
+    mutate(contestant = x)
+})) %>%
+  write.csv("Analysis Files//total_team_mentions.csv")
+```
+
+Most Controversial Contestant:
+```{r}
+plyr::rbind.fill(lapply(all_contestants, function(x){
+  df[grepl(x, tolower(df$tweet)),] %>%
+    separate(date, into = c("date", "time"), sep = " ") %>% 
+    #group_by(date) %>% 
+    mutate(text = tolower(tweet)) %>% 
+    unnest_tokens(word, text) %>% 
+    anti_join(stop_words) %>% 
+    inner_join(get_sentiments("nrc")) %>% #get nrc sentiments for entire dataset
+    group_by(sentiment, date) %>% #group
+    count(word, sentiment, sort = T) %>% 
+    ungroup() %>% 
+    distinct(word, .keep_all = T) %>% 
+    group_by(sentiment, date) %>% 
+    summarise(n = sum(n)) %>% 
+    mutate(name = x)
+})) %>% 
+  write.csv("Analysis Files//Controversial_Team.csv")
+```
+Top Words for All contestants:
+```{r}
+#Top 20 words for word cloud
+plyr::rbind.fill(lapply(all_contestants, function(x){
+    df[grepl(x, tolower(df$tweet)),] %>% 
+    mutate(tweet = removeURL2(tweet)) %>% 
+    mutate(tweet = removeNumPunct(tweet)) %>% 
+    mutate(tweet = tolower(tweet)) %>% 
+    mutate(tweet = gsub("wil", "", tweet)) %>% 
+    mutate(tweet = gsub("ben", "", tweet)) %>% 
+    mutate(tweet = gsub("al", "", tweet)) %>% 
+    mutate(tweet = gsub("ned", "", tweet)) %>% 
+    unnest_tokens(word, tweet) %>% 
+    anti_join(stop_words) %>% 
+    count(word, sort = T) %>% 
+    distinct(word, .keep_all = T) %>% 
+    top_n(20) %>% 
+    mutate(contestant = x)
+})) %>% 
+write.csv("Analysis Files//Top_words_team.csv")
+```
+
+Bing Analysis by Day of the week:
+```{r}
+#Sentiment trend day of the week
+plyr::rbind.fill(lapply(all_contestants, function(x){
+  df[grepl(x, tolower(df$tweet)),] %>% 
+    mutate(tweet = removeURL2(tweet)) %>% 
+    mutate(tweet = removeNumPunct(tweet)) %>% 
+    mutate(tweet = tolower(tweet)) %>% 
+    unnest_tokens(word, tweet) %>% 
+    anti_join(stop_words) %>% 
+    inner_join(get_sentiments("bing")) %>% 
+    separate(date, into = c("date", "time"), sep = " ") %>% 
+    mutate(date = ymd(date)) %>% 
+    mutate(day = weekdays(date)) %>% 
+    group_by(sentiment, day, date) %>% 
+    count() %>% 
+    mutate(contestant = x)
+})) %>% 
+  write.csv("Analysis Files//Bing_team_by_Weekday.csv")
+```
+
+
+Bing Analysis by hr of the day:
+```{r}
+plyr::rbind.fill(lapply(all_contestants, function(x){
+  df[grepl(x, tolower(df$tweet)),] %>% 
+    mutate(tweet = removeURL2(tweet)) %>% 
+    mutate(tweet = removeNumPunct(tweet)) %>% 
+    mutate(tweet = tolower(tweet)) %>% 
+    unnest_tokens(word, tweet) %>% 
+    anti_join(stop_words) %>% 
+    inner_join(get_sentiments("bing")) %>% 
+    separate(date, into = c("date", "time"), sep = " ") %>% 
+    mutate(date = ymd(date)) %>% 
+    mutate(day = weekdays(date)) %>% 
+    mutate(hr = hour(hms(time))) %>% 
+    mutate(tm = ifelse(hr < 12, "am", "pm")) %>%
+    unite(time, hr, tm, sep = " ") %>% 
+    group_by(time, day, date) %>% 
+    count(sentiment) %>% 
+    mutate(contestant = x)
+})) %>% 
+  write.csv("Analysis Files//Bing_team_by_hr.csv")
+```
+
+```{r}
+```
+
+Handles for each contestant
+```{r}
+#Handles for contestants
+plyr::rbind.fill(lapply(all_contestants, function(x){
+  df[grepl(x, tolower(df$tweet)),] %>%
+    summarise(handles = users(tweet) %>% 
+                unlist() %>% 
+                unique() %>% 
+                length()) %>%
+    mutate(contestant = x)})) %>% 
+  write.csv("Analysis Files//Team_handles_count.csv")
+# #number of verified and unverified accts 
+# plyr::rbind.fill(lapply(all_contestants, function(x){
+#   df[grepl(x, tolower(df$tweet)),] %>%
+#   distinct(author, .keep_all = T) %>% 
+#     separate(date, into = c("date", "time"), sep = " ") %>% 
+#     group_by(date) %>% 
+#   count(UserIsVerified) %>% 
+#     mutate(name = x)})) %>% 
+#   write.csv("Analysis Files//Handles_verified_team.csv")
+```
